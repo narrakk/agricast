@@ -129,9 +129,134 @@ function getCacheStats() {
   return weatherCache.getStats();
 }
 
+/**
+ * Fetches a grid of weather data for map layer rendering.
+ * Samples weather at a 5x5 grid of points across East Africa
+ * and returns data formatted for heatmap overlays.
+ *
+ * Grid covers: lat -4.5 to 4.5, lon 33.5 to 42.5 (East Africa bounding box)
+ * 25 points total — stays well within Open-Meteo free tier limits when cached.
+ *
+ * @param {string} variable - Open-Meteo hourly variable name
+ * @returns {Array} Array of [lat, lon, value] for leaflet.heat
+ */
+async function getGridData(variable) {
+  const cacheKey = `grid_${variable}`;
+  const cached = weatherCache.get(cacheKey);
+  if (cached) {
+    console.log(`[Cache HIT] Grid data for ${variable}`);
+    return cached;
+  }
+
+  // 5x5 grid spanning East Africa
+  const latPoints = [-4.0, -2.0, 0.0, 2.0, 4.0];
+  const lonPoints = [34.0, 35.5, 37.0, 38.5, 40.0];
+
+  const points = [];
+  for (const lat of latPoints) {
+    for (const lon of lonPoints) {
+      points.push({ lat, lon });
+    }
+  }
+
+  // Fetch all 25 points in parallel
+  const results = await Promise.all(
+    points.map(async ({ lat, lon }) => {
+      try {
+        const params = {
+          latitude: lat,
+          longitude: lon,
+          hourly: variable,
+          timezone: 'auto',
+          forecast_days: 1
+        };
+        const response = await axios.get(`${OPEN_METEO_BASE}/forecast`, { params });
+        // Return current hour value (index 0)
+        const value = response.data.hourly[variable]?.[0] ?? 0;
+        return [lat, lon, value];
+      } catch (e) {
+        return [lat, lon, 0];
+      }
+    })
+  );
+
+  weatherCache.set(cacheKey, results);
+  return results;
+}
+
+/**
+ * Fetches wind U and V components for a grid of points.
+ * Formats data into leaflet-velocity's required JSON structure.
+ *
+ * @returns {Array} Two-element array: [uComponent, vComponent] in leaflet-velocity format
+ */
+async function getWindGridData() {
+  const cacheKey = 'wind_grid';
+  const cached = weatherCache.get(cacheKey);
+  if (cached) return cached;
+
+  // Denser 8x8 grid for smoother wind animation
+  const latPoints = [-4.0, -2.5, -1.0, 0.5, 1.5, 2.5, 3.5, 4.5];
+  const lonPoints = [33.5, 34.7, 35.9, 37.1, 38.3, 39.5, 40.7, 41.9];
+
+  const nx = lonPoints.length;
+  const ny = latPoints.length;
+
+  const uData = new Array(nx * ny).fill(0);
+  const vData = new Array(nx * ny).fill(0);
+
+  await Promise.all(
+    latPoints.flatMap((lat, latIdx) =>
+      lonPoints.map(async (lon, lonIdx) => {
+        try {
+          const response = await axios.get(`${OPEN_METEO_BASE}/forecast`, {
+            params: {
+              latitude: lat,
+              longitude: lon,
+              hourly: 'windspeed_10m,winddirection_10m',
+              timezone: 'auto',
+              forecast_days: 1
+            }
+          });
+          const speed = response.data.hourly.windspeed_10m?.[0] ?? 0;
+          const dir = response.data.hourly.winddirection_10m?.[0] ?? 0;
+          // Convert speed/direction to U/V components
+          const dirRad = (dir * Math.PI) / 180;
+          uData[latIdx * nx + lonIdx] = -speed * Math.sin(dirRad);
+          vData[latIdx * nx + lonIdx] = -speed * Math.cos(dirRad);
+        } catch (e) {
+          // Leave as 0
+        }
+      })
+    )
+  );
+
+  // Format for leaflet-velocity
+  const header = {
+    parameterUnit: 'm/s',
+    lo1: lonPoints[0],
+    la1: latPoints[latPoints.length - 1],
+    dx: (lonPoints[lonPoints.length - 1] - lonPoints[0]) / (nx - 1),
+    dy: (latPoints[latPoints.length - 1] - latPoints[0]) / (ny - 1),
+    nx,
+    ny,
+    refTime: new Date().toISOString()
+  };
+
+  const result = [
+    { header: { ...header, parameterNumber: 2, parameterNumberName: 'eastward_wind' }, data: uData },
+    { header: { ...header, parameterNumber: 3, parameterNumberName: 'northward_wind' }, data: vData }
+  ];
+
+  weatherCache.set(cacheKey, result);
+  return result;
+}
+
 module.exports = {
   getWeatherForecast,
   getHistoricalWeather,
   decodeWeatherCode,
-  getCacheStats
+  getCacheStats,
+  getGridData,
+  getWindGridData
 };

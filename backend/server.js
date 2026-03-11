@@ -44,7 +44,9 @@ app.get('/', (req, res) => {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 const weatherRoutes = require('./src/routes/weather');
+const mapRoutes = require('./src/routes/mapLayers');
 app.use('/api/weather', weatherRoutes);
+app.use('/api/map', mapRoutes);
 
 // ─── 404 handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {
