@@ -1,0 +1,22 @@
+{
+  "name": "AgriCast",
+  "short_name": "AgriCast",
+  "description": "Hyperlocal weather intelligence for East African farmers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2D6A4F",
+  "theme_color": "#2D6A4F",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192x192/2D6A4F/FFFFFF?text=AC",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512x512/2D6A4F/FFFFFF?text=AC",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
